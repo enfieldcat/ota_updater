@@ -12,5 +12,7 @@ sequence: 1586743799
 sha256: ee4d000f93b754e61d2c400517735e8a45719de863fefbfcabd182f62cb473ca
 </pre>
 
+Note the main logic to be replicated between projects is in the ota_contrl tab / file.
+
 For a more detailed description see <a href="https://conferre.cf/arduino/ota_updater.php">https://conferre.cf/arduino/ota_updater.php</a>
 
