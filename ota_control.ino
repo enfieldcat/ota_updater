@@ -22,10 +22,9 @@ class ota_control {
     char message[120];
     char image_name[80];
     char chksum[65];
-    const char *rootCACertificate = NULL;
+    // const char *rootCACertificate = NULL;
     uint32_t image_size;
     WiFiClient *client = NULL;
-    WiFiClientSecure *secClient = NULL;
     HTTPClient *http = NULL;
     
     /*
@@ -55,28 +54,25 @@ class ota_control {
     /*
      * Open a stream to read the http/s data
      */
-    WiFiClient* getHttpStream (char *url)
+    WiFiClient* getHttpStream (char *url, const char *cert)
     {
-      int httpCode;
       WiFiClient *retVal = NULL;
-      if (strncmp (url, "https://", 8) == 0) {
-        secClient = new WiFiClientSecure;
-        if (rootCACertificate != NULL) secClient -> setCACert(rootCACertificate);
+      int httpCode;
+      
+      http = new HTTPClient;
+      if (strncmp (url, "https://", 8) == 0 && cert != NULL) {
+        http->begin (url, cert);
       }
-      else client = new WiFiClient;
-      if (secClient != NULL || client != NULL) {
-          http = new HTTPClient;
-          if ((secClient!=NULL && http->begin(*secClient, url)) || (client!=NULL && http->begin(*client, url))) {
-            httpCode = http->GET();
-            if (httpCode == HTTP_CODE_OK) {
-              retVal = http->getStreamPtr();
-            }
-          else if (httpCode<0) sprintf (message, "Failed to connect to OTA server: %s", url);
-          else sprintf (message, "Error: %d on %s", httpCode, url);
-          }
-        else sprintf (message, "Could not create http client: %s", url);
-        }
-      else sprintf (message, "Unable to create WiFiClient: %s", url);
+      else {
+        http->begin (url);
+      }
+      httpCode = http->GET();
+      if (httpCode == HTTP_CODE_OK) {
+        retVal = http->getStreamPtr();
+      }
+      else if (httpCode<0) {
+        sprintf (message, "Error connecting to OTA server: %d on %s", httpCode, url);
+      }
       return (retVal);
     }
 
@@ -94,22 +90,18 @@ class ota_control {
         client->~WiFiClient();
         client = NULL;
       }
-      if (secClient != NULL){
-        secClient->~WiFiClientSecure();
-        secClient = NULL;
-      }
     }
 
     /*
      * Read metadata about the update
      */
-    bool get_meta_data(char *url)
+    bool get_meta_data(char *url, const char *cert)
     {
       bool retVal = false;
       int32_t inByte;
       char inPtr;
       char inBuffer[80];
-      WiFiClient *inStream = getHttpStream(url);
+      WiFiClient *inStream = getHttpStream(url, cert);
       if (inStream != NULL) {
         inPtr = 0;
          // process the character stream from the http/s source
@@ -199,7 +191,7 @@ class ota_control {
     /*
      * Read the image into OTA update partition
      */
-    bool get_ota_image(char *url)
+    bool get_ota_image(char *url, const char *cert)
     {
       bool retVal = false;
       const esp_partition_t *targetPart;
@@ -215,7 +207,7 @@ class ota_control {
         sprintf (message, "Cannot identify target partition for update");
         return (false);
       }
-      WiFiClient *inStream = getHttpStream(url);
+      WiFiClient *inStream = getHttpStream(url, cert);
       if (inStream != NULL) {
         if (esp_ota_begin(targetPart, image_size, &targetHandle) == ESP_OK) {
           inBuffer = (uint8_t*) malloc (OTA_BUFFER_SIZE);
@@ -284,7 +276,7 @@ class ota_control {
      *   4. image transfer failed or mismatches sha256 checksum
      *   5. cannot setup connection to server
      */
-    bool update(char *baseurl, char *metadata)
+    bool update(char *baseurl, const char *cert, char *metadata)
     {
       bool retVal = false;
       char url[132];
@@ -292,10 +284,10 @@ class ota_control {
       strcpy (url, baseurl);
       strcat (url, metadata);
       if (sequence == 0) get_sequence_id();
-      if (get_meta_data(url)) {
+      if (get_meta_data(url, cert)) {
         strcpy (url, baseurl);
         strcat (url, image_name);
-        if (get_ota_image(url)) retVal = true;
+        if (get_ota_image(url, cert)) retVal = true;
       }
       return (retVal);
     }
@@ -322,15 +314,7 @@ class ota_control {
       }
       return (retVal);
     }
-
-    /*
-     * If using https, set root certificate - call prior to update
-     */
-    void setRootCertificate (const char *certificate)
-    {
-      rootCACertificate = certificate;
-    }
-
+  
     /*
      * Return data about the current image.
      */
@@ -417,13 +401,12 @@ const char* rootCACertificate = \
 
 void check4update()
 {
-  theOtaControl.setRootCertificate(rootCACertificate);
   //if (theOtaControl.update ("http://192.168.1.4/projects/ota_updater/", "metadata.php")) {
-  if (theOtaControl.update ("https://conferre.cf/projects/ota_updater/", "metadata.php")) {
+  if (theOtaControl.update ("https://conferre.cf/projects/zebramon/", "metadata.php")) {
     Serial.println (theOtaControl.get_status_message());
     Serial.println ("OTA update successful, will reboot in 10 seconds.");
     // To automate complete boot cycle optionally restart now
-    // Some appliactions may need wait for manual restart or other things to happen first
+    // Some applications may need wait for manual restart or other things to happen first
     // So a reboot is not always appropriate:
     delay (10000);
     esp_restart();
